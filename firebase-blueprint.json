@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account profile for freelancer or client",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address",
+          "maxLength": 256
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the user",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "description": "Role in the portal",
+          "enum": ["freelancer", "client"],
+          "maxLength": 30
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when user profile was created",
+          "maxLength": 64
+        }
+      },
+      "required": ["userId", "email", "role", "createdAt"]
+    },
+    "AssetFile": {
+      "title": "AssetFile",
+      "description": "Uploaded asset file record and metadata stored in Firestore",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner user UID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "File name",
+          "maxLength": 255
+        },
+        "size": {
+          "type": "number",
+          "description": "File size in bytes"
+        },
+        "type": {
+          "type": "string",
+          "description": "MIME type or file category",
+          "maxLength": 120
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "ISO date string or timestamp of upload",
+          "maxLength": 64
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Associated client or project name",
+          "maxLength": 120
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes or instructions for the asset",
+          "maxLength": 1000
+        }
+      },
+      "required": ["userId", "name", "size", "type", "uploadedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles restricted to the authenticated user"
+    },
+    "/files/{fileId}": {
+      "schema": "AssetFile",
+      "description": "Uploaded client and freelancer file records restricted to file owner"
+    }
+  }
+}

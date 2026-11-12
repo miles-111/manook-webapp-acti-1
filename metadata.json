@@ -1,0 +1,6 @@
+{
+  "name": "AssetSilo",
+  "description": "Secure client file portal for freelancers and designers to share, upload, and manage client assets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
