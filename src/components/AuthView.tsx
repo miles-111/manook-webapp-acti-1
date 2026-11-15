@@ -1,18 +1,31 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  FolderArchive,
+  Crosshair,
   Lock,
   Mail,
   User,
-  ShieldCheck,
   ArrowRight,
-  Sparkles,
   Loader2,
   AlertCircle,
-  Briefcase,
-  Users,
+  Zap,
+  MousePointerClick,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { CrosshairColorPreset, CrosshairSettings } from '../types';
+import {
+  DEFAULT_CROSSHAIR,
+  drawCrosshairOnCanvas,
+  generateValorantCode,
+} from '../utils/aimMath';
+
+const SHOWCASE_COLORS: { preset: CrosshairColorPreset; hex: string; label: string }[] = [
+  { preset: 'Cyan', hex: '#00E5FF', label: 'Cyan' },
+  { preset: 'Red', hex: '#FF4655', label: 'Crimson' },
+  { preset: 'Green', hex: '#00FF66', label: 'Green' },
+  { preset: 'Yellow', hex: '#FFE600', label: 'Yellow' },
+  { preset: 'Pink', hex: '#FF55FF', label: 'Pink' },
+  { preset: 'White', hex: '#FFFFFF', label: 'White' },
+];
 
 export const AuthView: React.FC = () => {
   const {
@@ -27,10 +40,70 @@ export const AuthView: React.FC = () => {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [role, setRole] = useState<'freelancer' | 'client'>('freelancer');
+  const [playerTag, setPlayerTag] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Interactive showcase crosshair state
+  const [colorIdx, setColorIdx] = useState(0);
+  const showcaseCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const activeShowcaseColor = SHOWCASE_COLORS[colorIdx];
+  const showcaseCrosshair: CrosshairSettings = {
+    ...DEFAULT_CROSSHAIR,
+    colorPreset: activeShowcaseColor.preset,
+    outlines: true,
+    outlineThickness: 1,
+    outlineOpacity: 0.75,
+  };
+  const showcaseCode = generateValorantCode(showcaseCrosshair);
+
+  useEffect(() => {
+    const canvas = showcaseCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Sleek tactical dark arena preview
+    const bg = ctx.createRadialGradient(w / 2, h / 2, 16, w / 2, h / 2, w * 0.68);
+    bg.addColorStop(0, '#1B2333');
+    bg.addColorStop(1, '#0B0E14');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // Subtle tactical grid
+    ctx.strokeStyle = 'rgba(34, 42, 58, 0.7)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 28) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = 0; y < h; y += 28) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    // Center reference ring
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, 34, 0, Math.PI * 2);
+    ctx.stroke();
+
+    drawCrosshairOnCanvas(ctx, w / 2, h / 2, showcaseCrosshair, 2.2);
+  }, [colorIdx]);
+
+  const handleCycleColor = () => {
+    setColorIdx((prev) => (prev + 1) % SHOWCASE_COLORS.length);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,12 +111,12 @@ export const AuthView: React.FC = () => {
     clearError();
 
     if (!email || !password) {
-      setLocalError('Please fill in both email and password.');
+      setLocalError('Enter your email and password to continue.');
       return;
     }
 
     if (mode === 'signup' && password.length < 6) {
-      setLocalError('Password must be at least 6 characters long.');
+      setLocalError('Password must be at least 6 characters.');
       return;
     }
 
@@ -52,23 +125,23 @@ export const AuthView: React.FC = () => {
       if (mode === 'signin') {
         await signInWithEmail(email, password);
       } else {
-        await signUpWithEmail(email, password, displayName, role);
+        await signUpWithEmail(email, password, playerTag.trim() || 'Player', 'freelancer');
       }
     } catch {
-      // Handled by context
+      // Handled in context
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDemoLogin = async (demoRole: 'freelancer' | 'client') => {
+  const handleDemo = async () => {
     setLocalError(null);
     clearError();
     setIsSubmitting(true);
     try {
-      await signInDemo(demoRole);
+      await signInDemo();
     } catch {
-      // Handled by context
+      // Handled in context
     } finally {
       setIsSubmitting(false);
     }
@@ -77,212 +150,97 @@ export const AuthView: React.FC = () => {
   const activeError = localError || error;
 
   return (
-    <div className="min-h-screen w-full flex flex-col md:flex-row bg-[#fbf9f5] text-[#2b2118]">
-      {/* Left Brand Panel - Espresso Brown */}
-      <div className="relative flex flex-col justify-between border-b md:border-b-0 md:border-r border-[#2d1e15] bg-[#1a120c] p-8 md:p-12 text-[#f4eee6] md:w-5/12 lg:w-4/12">
-        <div>
-          {/* Brand Header */}
-          <div className="flex items-center gap-3 mb-10">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-linear-to-br from-[#c68953] to-[#8d4e28] text-white shadow-lg">
-              <FolderArchive className="h-6 w-6" />
-            </div>
-            <div>
-              <span className="font-serif text-2xl font-bold tracking-tight text-[#fcf9f5]">
+    <div className="min-h-screen w-full tactical-grid-bg text-slate-100 flex flex-col lg:flex-row">
+      {/* Left Side: Brand + Working Sign In / Create Account Form */}
+      <div className="flex-1 flex flex-col justify-center px-6 py-10 sm:px-12 lg:px-16 xl:px-24">
+        <div className="mx-auto w-full max-w-md space-y-7">
+          {/* Logo & Tagline */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#FF4655] text-white shadow-lg shadow-[#FF4655]/20">
+                <Crosshair className="h-6 w-6" />
+              </div>
+              <span className="font-display text-2xl font-extrabold tracking-tight text-white">
                 AssetSilo
               </span>
-              <p className="text-xs text-[#a9988b]">Client File Portal</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="font-serif text-3xl font-bold tracking-tight text-[#fcf9f5] leading-tight">
-              Secure client file management, made effortless.
-            </h2>
-            <p className="text-sm text-[#bfb0a3] leading-relaxed">
-              Give your clients a polished, private portal to upload, review, and organize deliverables without email clutter or broken links.
-            </p>
-          </div>
-
-          {/* Value Props */}
-          <div className="mt-10 space-y-3.5">
-            <div className="flex items-start gap-3">
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#2d1e15] text-[#d1945f]">
-                <ShieldCheck className="h-4 w-4" />
-              </div>
-              <p className="text-xs text-[#bfb0a3] leading-relaxed">
-                <strong className="text-[#f4eee6]">Client-isolated silos:</strong> Each client only accesses their assigned project assets.
-              </p>
             </div>
 
-            <div className="flex items-start gap-3">
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#2d1e15] text-[#d1945f]">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <p className="text-xs text-[#bfb0a3] leading-relaxed">
-                <strong className="text-[#f4eee6]">Instant asset inspection:</strong> High-res preview, file size tracking, and rapid downloads.
-              </p>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#2d1e15] text-[#d1945f]">
-                <Briefcase className="h-4 w-4" />
-              </div>
-              <p className="text-xs text-[#bfb0a3] leading-relaxed">
-                <strong className="text-[#f4eee6]">Designer-first workflow:</strong> Clean espresso & cream aesthetic tailored for creative professionals.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Demo Fast Track */}
-        <div className="mt-10 rounded-2xl border border-[#2d1e15] bg-[#22160f] p-4 text-xs">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-[#e8c8ad]">Quick Evaluation</span>
-            <span className="rounded-full bg-[#3d291d] px-2 py-0.5 text-[10px] font-mono text-[#d1945f]">
-              1-Click Demo
-            </span>
-          </div>
-          <p className="text-[11px] text-[#a9988b] mb-3">
-            Want to test immediately without typing credentials?
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => handleDemoLogin('freelancer')}
-              disabled={isSubmitting}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-[#3d291d] bg-[#2d1e15] py-2 text-xs font-semibold text-[#f4eee6] hover:bg-[#34241b] transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <span>Designer View</span>
-            </button>
-            <button
-              onClick={() => handleDemoLogin('client')}
-              disabled={isSubmitting}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-[#3d291d] bg-[#2d1e15] py-2 text-xs font-semibold text-[#f4eee6] hover:bg-[#34241b] transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <span>Client View</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Right Content Panel - Soft Cream & Warm Taupe */}
-      <div className="flex-1 flex flex-col justify-center items-center p-6 md:p-12 lg:p-16">
-        <div className="w-full max-w-md">
-          {/* Tab Selector */}
-          <div className="flex rounded-xl border border-[#e6ded4] bg-[#f4efe8] p-1 mb-8">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('signin');
-                clearError();
-                setLocalError(null);
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                mode === 'signin'
-                  ? 'bg-white text-[#2b2118] shadow-xs'
-                  : 'text-[#7a6e65] hover:text-[#2b2118]'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('signup');
-                clearError();
-                setLocalError(null);
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                mode === 'signup'
-                  ? 'bg-white text-[#2b2118] shadow-xs'
-                  : 'text-[#7a6e65] hover:text-[#2b2118]'
-              }`}
-            >
-              Create an Account
-            </button>
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-white text-balance leading-snug">
+              Your Crosshairs, Sens &amp; Loadouts — Synced Anywhere
+            </h1>
           </div>
 
-          {/* Form Card */}
-          <div className="rounded-2xl border border-[#e6ded4] bg-white p-7 shadow-xs">
-            <div className="mb-6">
-              <h3 className="font-serif text-xl font-bold text-[#2b2118]">
-                {mode === 'signin' ? 'Welcome Back' : 'Create an Account'}
-              </h3>
-              <p className="mt-1 text-xs text-[#7a6e65]">
-                {mode === 'signin'
-                  ? 'Sign in to access your secure client portal'
-                  : 'Get started with your free AssetSilo workspace'}
-              </p>
+          {/* Auth Card */}
+          <div className="rounded-xl border border-[#222A3A] bg-[#131822] p-6 sm:p-7">
+            {/* Mode Switcher */}
+            <div className="grid grid-cols-2 gap-1 rounded-lg border border-[#222A3A] bg-[#0B0E14] p-1 mb-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signin');
+                  clearError();
+                  setLocalError(null);
+                }}
+                className={`rounded-md py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                  mode === 'signin'
+                    ? 'bg-[#FF4655] text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signup');
+                  clearError();
+                  setLocalError(null);
+                }}
+                className={`rounded-md py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                  mode === 'signup'
+                    ? 'bg-[#FF4655] text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Create Account
+              </button>
             </div>
 
             {activeError && (
-              <div className="mb-5 flex items-start gap-2.5 rounded-xl bg-red-50 p-3.5 text-xs text-red-700 border border-red-200">
-                <AlertCircle className="h-4 w-4 shrink-0 text-red-500 mt-0.5" />
-                <span className="leading-relaxed">{activeError}</span>
+              <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-[#FF4655]/40 bg-[#FF4655]/10 p-3 text-xs text-rose-200">
+                <AlertCircle className="h-4 w-4 shrink-0 text-[#FF4655] mt-0.5" />
+                <span>{activeError}</span>
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === 'signup' && (
-                <>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#423730] mb-1.5">
-                      Your Full Name
-                    </label>
-                    <div className="relative">
-                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#9e9084]">
-                        <User className="h-4 w-4" />
-                      </div>
-                      <input
-                        type="text"
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        placeholder="Elena Vance"
-                        maxLength={100}
-                        className="w-full rounded-xl border border-[#dfd6cb] bg-white pl-10 pr-3.5 py-2.5 text-sm text-[#2b2118] placeholder-[#9e9084] focus:border-[#a35c34] focus:outline-hidden"
-                      />
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Player Tag
+                  </label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500">
+                      <User className="h-4 w-4" />
                     </div>
+                    <input
+                      type="text"
+                      value={playerTag}
+                      onChange={(e) => setPlayerTag(e.target.value)}
+                      placeholder="e.g. AceVandal"
+                      maxLength={80}
+                      className="w-full rounded-lg border border-[#222A3A] bg-[#0B0E14] pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-[#00E5FF] focus:outline-hidden"
+                    />
                   </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#423730] mb-1.5">
-                      Account Type
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setRole('freelancer')}
-                        className={`flex items-center justify-center gap-1.5 rounded-xl border p-2.5 text-xs font-semibold transition-all cursor-pointer ${
-                          role === 'freelancer'
-                            ? 'border-[#a35c34] bg-[#fbf5ee] text-[#8d4e28]'
-                            : 'border-[#dfd6cb] text-[#7a6e65] hover:bg-[#faf7f2]'
-                        }`}
-                      >
-                        <Briefcase className="h-3.5 w-3.5" />
-                        <span>Freelancer</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRole('client')}
-                        className={`flex items-center justify-center gap-1.5 rounded-xl border p-2.5 text-xs font-semibold transition-all cursor-pointer ${
-                          role === 'client'
-                            ? 'border-[#a35c34] bg-[#fbf5ee] text-[#8d4e28]'
-                            : 'border-[#dfd6cb] text-[#7a6e65] hover:bg-[#faf7f2]'
-                        }`}
-                      >
-                        <Users className="h-3.5 w-3.5" />
-                        <span>Client</span>
-                      </button>
-                    </div>
-                  </div>
-                </>
+                </div>
               )}
 
               <div>
-                <label className="block text-xs font-semibold text-[#423730] mb-1.5">
-                  Email Address
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Player Email
                 </label>
                 <div className="relative">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#9e9084]">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500">
                     <Mail className="h-4 w-4" />
                   </div>
                   <input
@@ -290,19 +248,19 @@ export const AuthView: React.FC = () => {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@example.com"
+                    placeholder="you@example.com"
                     maxLength={256}
-                    className="w-full rounded-xl border border-[#dfd6cb] bg-white pl-10 pr-3.5 py-2.5 text-sm text-[#2b2118] placeholder-[#9e9084] focus:border-[#a35c34] focus:outline-hidden"
+                    className="w-full rounded-lg border border-[#222A3A] bg-[#0B0E14] pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-[#00E5FF] focus:outline-hidden"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#423730] mb-1.5">
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                   Password
                 </label>
                 <div className="relative">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#9e9084]">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-500">
                     <Lock className="h-4 w-4" />
                   </div>
                   <input
@@ -311,7 +269,7 @@ export const AuthView: React.FC = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full rounded-xl border border-[#dfd6cb] bg-white pl-10 pr-3.5 py-2.5 text-sm text-[#2b2118] placeholder-[#9e9084] focus:border-[#a35c34] focus:outline-hidden"
+                    className="w-full rounded-lg border border-[#222A3A] bg-[#0B0E14] pl-10 pr-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-[#00E5FF] focus:outline-hidden"
                   />
                 </div>
               </div>
@@ -319,83 +277,159 @@ export const AuthView: React.FC = () => {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-[#231710] py-3 text-sm font-semibold text-white shadow-md hover:bg-[#34241b] transition-all cursor-pointer active:scale-[0.99] disabled:opacity-60"
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#FF4655] py-3 text-sm font-bold text-white hover:bg-[#e53947] transition-colors cursor-pointer disabled:opacity-60"
               >
                 {isSubmitting ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin text-[#d1945f]" />
-                    <span>Please wait...</span>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Loading...</span>
                   </>
                 ) : (
                   <>
-                    <span>{mode === 'signin' ? 'Sign In' : 'Create an Account'}</span>
-                    <ArrowRight className="h-4 w-4 text-[#d1945f]" />
+                    <span>{mode === 'signin' ? 'Jump In' : 'Create Account'}</span>
+                    <ArrowRight className="h-4 w-4" />
                   </>
                 )}
               </button>
             </form>
 
-            {/* Divider */}
             <div className="my-5 flex items-center gap-3">
-              <div className="h-px flex-1 bg-[#ece4d9]" />
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[#9e9084]">
-                or continue with
-              </span>
-              <div className="h-px flex-1 bg-[#ece4d9]" />
+              <div className="h-px flex-1 bg-[#222A3A]" />
+              <span className="text-[11px] font-medium text-slate-500">or</span>
+              <div className="h-px flex-1 bg-[#222A3A]" />
             </div>
 
-            {/* Google Sign In */}
-            <button
-              type="button"
-              onClick={() => signInWithGoogle()}
-              disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-2.5 rounded-xl border border-[#dfd6cb] bg-white py-2.5 text-xs font-semibold text-[#423730] hover:bg-[#faf7f2] transition-colors cursor-pointer"
-            >
-              <svg className="h-4 w-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>Google Account</span>
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => signInWithGoogle()}
+                disabled={isSubmitting}
+                className="flex items-center justify-center gap-2 rounded-lg border border-[#222A3A] bg-[#0B0E14] py-2.5 px-3 text-xs font-semibold text-slate-200 hover:border-slate-500 transition-colors cursor-pointer"
+              >
+                <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>Google</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDemo}
+                disabled={isSubmitting}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-[#00E5FF]/40 bg-[#00E5FF]/10 py-2.5 px-3 text-xs font-semibold text-[#00E5FF] hover:bg-[#00E5FF]/20 transition-colors cursor-pointer"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span>Quick Demo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Right Side: Live Interactive Valorant Loadout & Crosshair Showcase */}
+      <div className="flex-1 flex flex-col justify-center items-center border-t lg:border-t-0 lg:border-l border-[#222A3A] bg-[#0E121B]/80 px-6 py-10 sm:px-12">
+        <div className="w-full max-w-lg rounded-xl border border-[#222A3A] bg-[#131822] p-6 space-y-5">
+          <div className="flex items-center justify-between border-b border-[#222A3A] pb-4">
+            <div>
+              <p className="text-xs font-semibold text-[#00E5FF]">Sample Pro Loadout</p>
+              <h2 className="font-display text-xl font-bold text-white mt-0.5">
+                Valorant Main · Crisp Dotless
+              </h2>
+            </div>
+            <span className="font-mono text-xs text-slate-400">1920x1080</span>
           </div>
 
-          <p className="mt-6 text-center text-xs text-[#8c7e74]">
-            {mode === 'signin' ? (
-              <>
-                Don&apos;t have an account?{' '}
+          {/* Clickable Live Crosshair Preview Canvas */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-slate-300 font-medium">
+                <MousePointerClick className="h-3.5 w-3.5 text-[#00E5FF]" />
+                Click preview to toggle color
+              </span>
+              <span
+                className="font-mono font-semibold"
+                style={{ color: activeShowcaseColor.hex }}
+              >
+                {activeShowcaseColor.label}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCycleColor}
+              className="group relative block w-full overflow-hidden rounded-lg border border-[#222A3A] hover:border-[#00E5FF]/60 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[#00E5FF]"
+              title="Click to cycle crosshair color"
+            >
+              <canvas
+                ref={showcaseCanvasRef}
+                width={480}
+                height={240}
+                className="block w-full h-auto"
+              />
+            </button>
+
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {SHOWCASE_COLORS.map((c, idx) => (
                 <button
-                  onClick={() => setMode('signup')}
-                  className="font-semibold text-[#8d4e28] hover:underline cursor-pointer"
+                  key={c.preset}
+                  type="button"
+                  onClick={() => setColorIdx(idx)}
+                  className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                    colorIdx === idx
+                      ? 'border-white/50 bg-[#1B2230] text-white'
+                      : 'border-[#222A3A] bg-[#0B0E14] text-slate-400 hover:text-white'
+                  }`}
                 >
-                  Create an Account
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: c.hex }}
+                  />
+                  <span>{c.label}</span>
                 </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{' '}
-                <button
-                  onClick={() => setMode('signin')}
-                  className="font-semibold text-[#8d4e28] hover:underline cursor-pointer"
-                >
-                  Sign In
-                </button>
-              </>
-            )}
-          </p>
+              ))}
+            </div>
+          </div>
+
+          {/* Sample Loadout Numbers */}
+          <div className="grid grid-cols-4 gap-3 border-t border-[#222A3A] pt-4">
+            <div>
+              <div className="text-[11px] text-slate-400">Mouse DPI</div>
+              <div className="font-mono text-base font-bold text-white mt-0.5">800</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-400">In-Game Sens</div>
+              <div className="font-mono text-base font-bold text-white mt-0.5">0.35</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-400">eDPI</div>
+              <div className="font-mono text-base font-bold text-[#00E5FF] mt-0.5">280</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-slate-400">360° Swipe</div>
+              <div className="font-mono text-base font-bold text-[#FF4655] mt-0.5">46.7 cm</div>
+            </div>
+          </div>
+
+          {/* Live Code Readout */}
+          <div className="rounded-lg border border-[#222A3A] bg-[#0B0E14] px-3.5 py-2.5 flex items-center justify-between gap-3">
+            <span className="text-[11px] text-slate-400 shrink-0">Valorant Code</span>
+            <code className="font-mono text-xs text-slate-200 truncate">{showcaseCode}</code>
+          </div>
         </div>
       </div>
     </div>

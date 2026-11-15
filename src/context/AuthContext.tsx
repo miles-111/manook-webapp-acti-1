@@ -23,10 +23,10 @@ interface AuthContextType {
     email: string,
     pass: string,
     displayName: string,
-    role: 'freelancer' | 'client'
+    role?: 'freelancer' | 'client'
   ) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
-  signInDemo: (role?: 'freelancer' | 'client') => Promise<void>;
+  signInDemo: () => Promise<void>;
   signOutUser: () => Promise<void>;
   clearError: () => void;
 }
@@ -54,8 +54,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Initialize default profile if it doesn't exist yet
             const newProfile: UserProfile = {
               userId: currentUser.uid,
-              email: currentUser.email || 'client@assetsilo.app',
-              displayName: currentUser.displayName || 'Asset Creator',
+              email: currentUser.email || 'player@assetsilo.app',
+              displayName: currentUser.displayName || 'Player',
               role: 'freelancer',
               createdAt: new Date().toISOString(),
             };
@@ -79,24 +79,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getFriendlyErrorMessage = (err: any): string => {
     const code = err?.code || '';
     if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
-      return 'The email or password you entered is incorrect. Please double check and try again.';
+      return 'Incorrect email or password. Double check and try again.';
     }
     if (code === 'auth/user-not-found') {
-      return 'No account was found with this email. You can create a new account in seconds.';
+      return 'No account found with that email. Switch to Create Account to get started.';
     }
     if (code === 'auth/email-already-in-use') {
-      return 'An account with this email already exists. Please sign in instead.';
+      return 'An account with this email already exists. Try signing in instead.';
     }
     if (code === 'auth/weak-password') {
-      return 'Your password is too short. Please choose a password with at least 6 characters.';
+      return 'Password needs to be at least 6 characters.';
     }
     if (code === 'auth/invalid-email') {
       return 'Please enter a valid email address.';
     }
     if (code === 'auth/popup-closed-by-user') {
-      return 'The sign-in popup was closed. Please try again.';
+      return 'Sign-in window closed before finishing. Try again.';
     }
-    return err?.message || 'An unexpected error occurred. Please try again.';
+    return err?.message || 'Something went wrong. Please try again.';
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
@@ -113,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     email: string,
     pass: string,
     displayName: string,
-    role: 'freelancer' | 'client'
+    role: 'freelancer' | 'client' = 'freelancer'
   ) => {
     setError(null);
     try {
@@ -125,7 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newProfile: UserProfile = {
         userId: cred.user.uid,
         email: cred.user.email || email,
-        displayName: displayName || (role === 'freelancer' ? 'Lead Designer' : 'Client Reviewer'),
+        displayName: displayName || 'Player',
         role,
         createdAt: new Date().toISOString(),
       };
@@ -155,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const newProfile: UserProfile = {
           userId: result.user.uid,
           email: result.user.email || '',
-          displayName: result.user.displayName || 'Google User',
+          displayName: result.user.displayName || 'Player',
           role: 'freelancer',
           createdAt: new Date().toISOString(),
         };
@@ -170,22 +170,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Demo sign-in enables instant evaluation of the portal
-  const signInDemo = async (role: 'freelancer' | 'client' = 'freelancer') => {
+  // Demo sign-in enables instant evaluation of the hub
+  const signInDemo = async () => {
     setError(null);
-    const demoEmail =
-      role === 'freelancer' ? 'demo.designer@assetsilo.app' : 'demo.client@assetsilo.app';
+    const demoEmail = 'demo.player@assetsilo.app';
     const demoPass = 'AssetSiloDemo2026!';
     try {
       await signInWithEmailAndPassword(auth, demoEmail, demoPass);
     } catch {
-      // If demo account doesn't exist yet, create it
-      await signUpWithEmail(
-        demoEmail,
-        demoPass,
-        role === 'freelancer' ? 'Elena Vance (Lead Designer)' : 'Marcus Brody (Acme Studio)',
-        role
-      );
+      await signUpWithEmail(demoEmail, demoPass, 'ViperMain', 'freelancer');
     }
   };
 

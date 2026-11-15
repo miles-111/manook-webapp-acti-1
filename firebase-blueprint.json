@@ -2,7 +2,7 @@
   "entities": {
     "UserProfile": {
       "title": "UserProfile",
-      "description": "User account profile for freelancer or client",
+      "description": "User account profile for AssetSilo",
       "type": "object",
       "properties": {
         "userId": {
@@ -22,59 +22,122 @@
         },
         "role": {
           "type": "string",
-          "description": "Role in the portal",
+          "description": "Account role",
           "enum": ["freelancer", "client"],
           "maxLength": 30
         },
         "createdAt": {
           "type": "string",
-          "description": "Timestamp when user profile was created",
+          "description": "ISO timestamp when user profile was created",
           "maxLength": 64
         }
       },
       "required": ["userId", "email", "role", "createdAt"]
     },
-    "AssetFile": {
-      "title": "AssetFile",
-      "description": "Uploaded asset file record and metadata stored in Firestore",
+    "AimConfig": {
+      "title": "AimConfig",
+      "description": "Saved PC or Mobile FPS aim, sensitivity, HUD, and crosshair loadout",
       "type": "object",
       "properties": {
         "userId": {
           "type": "string",
-          "description": "Owner user UID",
+          "description": "Owner Firebase Auth UID",
           "maxLength": 128
         },
         "name": {
           "type": "string",
-          "description": "File name",
+          "description": "Loadout name",
+          "maxLength": 100
+        },
+        "platform": {
+          "type": "string",
+          "description": "Target platform category",
+          "enum": ["PC", "Mobile"],
+          "maxLength": 16
+        },
+        "game": {
+          "type": "string",
+          "description": "Target FPS game",
+          "enum": ["Valorant", "CS2", "Apex Legends", "Overwatch 2", "CODM", "PUBGM", "ROS", "BloodStrike"],
+          "maxLength": 40
+        },
+        "tags": {
+          "type": "string",
+          "description": "Comma-separated tags for searching presets",
+          "maxLength": 160
+        },
+        "dpi": {
+          "type": "number",
+          "description": "PC mouse DPI setting"
+        },
+        "sensitivity": {
+          "type": "number",
+          "description": "PC in-game sensitivity"
+        },
+        "edpi": {
+          "type": "number",
+          "description": "PC effective DPI (DPI * sensitivity)"
+        },
+        "cm360": {
+          "type": "number",
+          "description": "PC physical centimeters per 360-degree turn"
+        },
+        "crosshairCode": {
+          "type": "string",
+          "description": "PC semicolon-delimited Valorant crosshair code",
           "maxLength": 255
         },
-        "size": {
+        "resolution": {
+          "type": "string",
+          "description": "PC display resolution or aspect ratio",
+          "maxLength": 40
+        },
+        "cameraSens": {
           "type": "number",
-          "description": "File size in bytes"
+          "description": "Mobile camera sensitivity percentage"
         },
-        "type": {
-          "type": "string",
-          "description": "MIME type or file category",
-          "maxLength": 120
+        "adsSens": {
+          "type": "number",
+          "description": "Mobile ADS / Scope sensitivity percentage"
         },
-        "uploadedAt": {
-          "type": "string",
-          "description": "ISO date string or timestamp of upload",
-          "maxLength": 64
+        "gyroSens": {
+          "type": "number",
+          "description": "Mobile gyroscope sensitivity percentage"
         },
-        "clientName": {
+        "fingerSetup": {
           "type": "string",
-          "description": "Associated client or project name",
-          "maxLength": 120
+          "description": "Mobile finger claw layout",
+          "enum": ["2-Thumb", "3-Finger Claw", "4-Finger Claw", "5-Finger Claw", "6-Finger Claw"],
+          "maxLength": 40
+        },
+        "hudCode": {
+          "type": "string",
+          "description": "Mobile HUD layout share code",
+          "maxLength": 255
         },
         "notes": {
           "type": "string",
-          "description": "Optional notes or instructions for the asset",
+          "description": "Optional setup notes",
           "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of creation",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last update",
+          "maxLength": 64
         }
       },
-      "required": ["userId", "name", "size", "type", "uploadedAt"]
+      "required": [
+        "userId",
+        "name",
+        "game",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -82,9 +145,9 @@
       "schema": "UserProfile",
       "description": "User profiles restricted to the authenticated user"
     },
-    "/files/{fileId}": {
-      "schema": "AssetFile",
-      "description": "Uploaded client and freelancer file records restricted to file owner"
+    "/users/{userId}/configs/{configId}": {
+      "schema": "AimConfig",
+      "description": "Saved PC and Mobile aim and crosshair loadouts scoped strictly to the owning user"
     }
   }
 }

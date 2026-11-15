@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   collection,
   deleteDoc,
@@ -6,229 +6,297 @@ import {
   onSnapshot,
   query,
   setDoc,
+  updateDoc,
   where,
 } from 'firebase/firestore';
+import {
+  Loader2,
+  AlertTriangle,
+  Trash2,
+  X,
+  Layers,
+  ArrowRightLeft,
+  Crosshair,
+  Target,
+  Menu,
+  Save,
+  Check,
+} from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { AssetFile, FileCategory, SortField, SortOrder, ViewMode } from './types';
+import {
+  AimConfig,
+  CrosshairSettings,
+  FingerSetup,
+  GameId,
+  PlatformMode,
+} from './types';
 import { Sidebar } from './components/Sidebar';
-import { DashboardHeader } from './components/DashboardHeader';
-import { StatsBar } from './components/StatsBar';
-import { UploadZone } from './components/UploadZone';
-import { FileList } from './components/FileList';
-import { FileGrid } from './components/FileGrid';
-import { FilePreviewModal } from './components/FilePreviewModal';
-import { DeleteConfirmModal } from './components/DeleteConfirmModal';
-import { SharePortalModal } from './components/SharePortalModal';
-import { EmptyState } from './components/EmptyState';
+import { PresetMetadataBar } from './components/PresetMetadataBar';
+import { SensitivityLab } from './components/SensitivityLab';
+import { CrosshairStudio } from './components/CrosshairStudio';
+import { AimTestBox } from './components/AimTestBox';
+import { SavedLoadoutsGrid } from './components/SavedLoadoutsGrid';
 import { AuthView } from './components/AuthView';
-import { downloadFile, getFileTypeInfo } from './utils/formatters';
-import { removeLocalFile } from './utils/localFileStore';
-import { Sparkles, Loader2 } from 'lucide-react';
+import {
+  DEFAULT_CROSSHAIR,
+  MOBILE_GAMES,
+  calculateCm360,
+  calculateEDPI,
+  generateValorantCode,
+  getConfigPlatform,
+  isMobileGame,
+  isPCGame,
+  parseValorantCode,
+} from './utils/aimMath';
 
-const MainPortal: React.FC = () => {
-  const { user, profile, loading: authLoading } = useAuth();
+type MobileTab = 'loadouts' | 'sens' | 'crosshair' | 'warmup';
 
-  const [files, setFiles] = useState<AssetFile[]>([]);
-  const [loadingFiles, setLoadingFiles] = useState<boolean>(true);
+const GamingHub: React.FC = () => {
+  const { user, loading: authLoading } = useAuth();
+
+  const [configs, setConfigs] = useState<AimConfig[]>([]);
+  const [loadingConfigs, setLoadingConfigs] = useState<boolean>(true);
+  const [vaultPlatformFilter, setVaultPlatformFilter] = useState<'All' | PlatformMode>('All');
+  const [gameFilter, setGameFilter] = useState<'All Games' | GameId>('All Games');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<FileCategory>('all');
-  const [selectedClient, setSelectedClient] = useState<string>('all');
-  const [sortField, setSortField] = useState<SortField>('date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('loadouts');
 
-  // Modals state
-  const [previewFile, setPreviewFile] = useState<AssetFile | null>(null);
-  const [fileToDelete, setFileToDelete] = useState<AssetFile | null>(null);
+  // Active Loadout Studio state
+  const [activeConfigId, setActiveConfigId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<PlatformMode>('PC');
+  const [name, setName] = useState('Main Tactical Cyan');
+  const [game, setGame] = useState<GameId>('Valorant');
+  const [tags, setTags] = useState('comp, flick');
+  const [notes, setNotes] = useState('');
+
+  // PC FPS state
+  const [resolution, setResolution] = useState('1920x1080 (16:9)');
+  const [dpi, setDpi] = useState<number>(800);
+  const [sensitivity, setSensitivity] = useState<number>(0.35);
+  const [crosshair, setCrosshair] = useState<CrosshairSettings>(DEFAULT_CROSSHAIR);
+
+  // Mobile FPS state
+  const [cameraSens, setCameraSens] = useState<number>(85);
+  const [adsSens, setAdsSens] = useState<number>(105);
+  const [gyroSens, setGyroSens] = useState<number>(140);
+  const [fingerSetup, setFingerSetup] = useState<FingerSetup>('4-Finger Claw');
+  const [hudCode, setHudCode] = useState<string>('7281-9402-1184');
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [configToDelete, setConfigToDelete] = useState<AimConfig | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [shareFile, setShareFile] = useState<AssetFile | null>(null);
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
-  // Real-time Firestore sync with strict security rule query
   useEffect(() => {
     if (!user) {
-      setFiles([]);
-      setLoadingFiles(false);
+      setConfigs([]);
+      setLoadingConfigs(false);
       return;
     }
 
-    setLoadingFiles(true);
-    const filesCollectionRef = collection(db, 'files');
-    const q = query(filesCollectionRef, where('userId', '==', user.uid));
+    setLoadingConfigs(true);
+    const configsRef = collection(db, 'users', user.uid, 'configs');
+    const q = query(configsRef, where('userId', '==', user.uid));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const loaded: AssetFile[] = [];
+        const loaded: AimConfig[] = [];
         snapshot.forEach((docSnap) => {
-          loaded.push({ id: docSnap.id, ...(docSnap.data() as Omit<AssetFile, 'id'>) });
+          loaded.push({ id: docSnap.id, ...(docSnap.data() as Omit<AimConfig, 'id'>) });
         });
-        setFiles(loaded);
-        setLoadingFiles(false);
+        loaded.sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+        setConfigs(loaded);
+        setLoadingConfigs(false);
       },
       (error) => {
-        setLoadingFiles(false);
-        handleFirestoreError(error, OperationType.LIST, 'files');
+        setLoadingConfigs(false);
+        handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/configs`);
       }
     );
 
     return () => unsubscribe();
   }, [user]);
 
-  // Derived metrics & clients
-  const clientsList = useMemo(() => {
-    const set = new Set<string>();
-    files.forEach((f) => {
-      if (f.clientName) set.add(f.clientName);
-    });
-    return Array.from(set).sort();
-  }, [files]);
-
-  const totalBytes = useMemo(() => {
-    return files.reduce((acc, f) => acc + (f.size || 0), 0);
-  }, [files]);
-
-  // Filtered & sorted files
-  const filteredFiles = useMemo(() => {
-    let result = [...files];
-
-    // Search query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (f) =>
-          f.name.toLowerCase().includes(q) ||
-          (f.clientName && f.clientName.toLowerCase().includes(q)) ||
-          (f.notes && f.notes.toLowerCase().includes(q))
-      );
-    }
-
-    // Category filter
-    if (selectedCategory !== 'all') {
-      result = result.filter((f) => {
-        const info = getFileTypeInfo(f.name, f.type);
-        return info.category === selectedCategory;
-      });
-    }
-
-    // Client filter
-    if (selectedClient !== 'all') {
-      result = result.filter((f) => (f.clientName || 'General Assets') === selectedClient);
-    }
-
-    // Sort order
-    result.sort((a, b) => {
-      let comparison = 0;
-      if (sortField === 'date') {
-        comparison = new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime();
-      } else if (sortField === 'name') {
-        comparison = a.name.localeCompare(b.name);
-      } else if (sortField === 'size') {
-        comparison = (b.size || 0) - (a.size || 0);
-      }
-      return sortOrder === 'desc' ? comparison : -comparison;
-    });
-
-    return result;
-  }, [files, searchQuery, selectedCategory, selectedClient, sortField, sortOrder]);
-
-  // Upload handler - stores metadata in Firestore database
-  const handleUploadFile = async (fileData: {
-    name: string;
-    size: number;
-    type: string;
-    clientName?: string;
-    notes?: string;
-  }) => {
-    if (!user) return;
-
-    const fileDocRef = doc(collection(db, 'files'));
-    const newDoc: Omit<AssetFile, 'id'> = {
-      userId: user.uid,
-      name: fileData.name,
-      size: fileData.size,
-      type: fileData.type,
-      uploadedAt: new Date().toISOString(),
-      ...(fileData.clientName ? { clientName: fileData.clientName } : {}),
-      ...(fileData.notes ? { notes: fileData.notes } : {}),
-    };
-
-    try {
-      await setDoc(fileDocRef, newDoc);
-    } catch (e) {
-      handleFirestoreError(e, OperationType.CREATE, `files/${fileDocRef.id}`);
+  const handlePlatformChange = (nextPlat: PlatformMode) => {
+    setPlatform(nextPlat);
+    if (nextPlat === 'PC' && !isPCGame(game)) {
+      setGame('Valorant');
+    } else if (nextPlat === 'Mobile' && !isMobileGame(game)) {
+      setGame('CODM');
     }
   };
 
-  // Delete handler
-  const handleDeleteConfirm = async () => {
-    if (!fileToDelete || !user) return;
+  const handleMobileGameChange = (nextGame: GameId) => {
+    setGame(nextGame);
+    if (isMobileGame(nextGame)) {
+      const preset = MOBILE_GAMES.find((m) => m.id === nextGame);
+      if (preset && !activeConfigId) {
+        setCameraSens(preset.defaultCamera);
+        setAdsSens(preset.defaultAds);
+        setGyroSens(preset.defaultGyro);
+      }
+    }
+  };
 
-    setIsDeleting(true);
-    const targetPath = `files/${fileToDelete.id}`;
+  const handleNewLoadout = () => {
+    setActiveConfigId(null);
+    if (platform === 'Mobile') {
+      setName('New Mobile Loadout');
+      setGame('CODM');
+      setTags('claw, gyro');
+      setCameraSens(85);
+      setAdsSens(105);
+      setGyroSens(140);
+      setFingerSetup('4-Finger Claw');
+      setHudCode('');
+    } else {
+      setName('New Loadout');
+      setGame('Valorant');
+      setTags('main');
+      setResolution('1920x1080 (16:9)');
+      setDpi(800);
+      setSensitivity(0.35);
+      setCrosshair(DEFAULT_CROSSHAIR);
+    }
+    setNotes('');
+    setSaveSuccess(false);
+  };
+
+  const handleSelectConfig = (cfg: AimConfig) => {
+    const plat = getConfigPlatform(cfg);
+    setActiveConfigId(cfg.id);
+    setPlatform(plat);
+    setName(cfg.name);
+    setGame(cfg.game);
+    setTags(cfg.tags || '');
+    setNotes(cfg.notes || '');
+
+    if (plat === 'Mobile') {
+      setCameraSens(cfg.cameraSens ?? 85);
+      setAdsSens(cfg.adsSens ?? 105);
+      setGyroSens(cfg.gyroSens ?? 140);
+      setFingerSetup(cfg.fingerSetup || '4-Finger Claw');
+      setHudCode(cfg.hudCode || '');
+    } else {
+      setResolution(cfg.resolution || '1920x1080 (16:9)');
+      setDpi(cfg.dpi ?? 800);
+      setSensitivity(cfg.sensitivity ?? 0.35);
+      const parsedCrosshair = cfg.crosshairCode ? parseValorantCode(cfg.crosshairCode) : null;
+      setCrosshair(parsedCrosshair || DEFAULT_CROSSHAIR);
+    }
+    setSaveSuccess(false);
+  };
+
+  const handleSavePreset = async (asNew = false) => {
+    if (!user) return;
+
+    setIsSaving(true);
+    setSaveSuccess(false);
+
+    const nowIso = new Date().toISOString();
+    const safeName = (name.trim() || 'Untitled Loadout').slice(0, 100);
+    const safeTags = tags.trim().slice(0, 160);
+    const safeNotes = notes.trim().slice(0, 1000);
+
+    const basePayload =
+      platform === 'PC'
+        ? {
+            name: asNew && !activeConfigId ? safeName : safeName,
+            platform: 'PC' as PlatformMode,
+            game: isPCGame(game) ? game : ('Valorant' as GameId),
+            tags: safeTags,
+            dpi: Math.max(50, Math.min(32000, Number(dpi) || 800)),
+            sensitivity: Math.max(0.001, Math.min(100, Number(sensitivity) || 0.35)),
+            edpi: calculateEDPI(
+              Math.max(50, Math.min(32000, Number(dpi) || 800)),
+              Math.max(0.001, Math.min(100, Number(sensitivity) || 0.35))
+            ),
+            cm360: calculateCm360(
+              Math.max(50, Math.min(32000, Number(dpi) || 800)),
+              Math.max(0.001, Math.min(100, Number(sensitivity) || 0.35)),
+              isPCGame(game) ? game : 'Valorant'
+            ),
+            crosshairCode: generateValorantCode(crosshair).slice(0, 255),
+            resolution: (resolution.trim() || '1920x1080 (16:9)').slice(0, 40),
+            notes: safeNotes,
+            updatedAt: nowIso,
+          }
+        : {
+            name: safeName,
+            platform: 'Mobile' as PlatformMode,
+            game: isMobileGame(game) ? game : ('CODM' as GameId),
+            tags: safeTags,
+            cameraSens: Math.max(1, Math.min(400, Number(cameraSens) || 85)),
+            adsSens: Math.max(1, Math.min(400, Number(adsSens) || 105)),
+            gyroSens: Math.max(0, Math.min(500, Number(gyroSens) || 140)),
+            fingerSetup,
+            hudCode: hudCode.trim().slice(0, 255),
+            notes: safeNotes,
+            updatedAt: nowIso,
+          };
+
     try {
-      await deleteDoc(doc(db, 'files', fileToDelete.id));
-      removeLocalFile(fileToDelete.name);
-      setFileToDelete(null);
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, targetPath);
+      if (activeConfigId && !asNew) {
+        const docPath = `users/${user.uid}/configs/${activeConfigId}`;
+        try {
+          await updateDoc(doc(db, 'users', user.uid, 'configs', activeConfigId), basePayload);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, docPath);
+        }
+      } else {
+        const newDocRef = doc(collection(db, 'users', user.uid, 'configs'));
+        const docPath = `users/${user.uid}/configs/${newDocRef.id}`;
+        const finalName = asNew ? `${safeName} (Copy)`.slice(0, 100) : safeName;
+        const newDoc = {
+          ...basePayload,
+          name: finalName,
+          userId: user.uid,
+          createdAt: nowIso,
+        };
+        try {
+          await setDoc(newDocRef, newDoc);
+          setActiveConfigId(newDocRef.id);
+          if (asNew) setName(finalName);
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, docPath);
+        }
+      }
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!configToDelete || !user) return;
+    setIsDeleting(true);
+    const docPath = `users/${user.uid}/configs/${configToDelete.id}`;
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'configs', configToDelete.id));
+      if (activeConfigId === configToDelete.id) {
+        setActiveConfigId(null);
+      }
+      setConfigToDelete(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, docPath);
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // Download handler
-  const handleDownload = (file: AssetFile) => {
-    downloadFile(file.name, file.clientName);
-  };
-
-  // Seed sample assets for immediate evaluation
-  const handleSeedSamples = async () => {
-    if (!user) return;
-    const sampleItems = [
-      {
-        name: 'Brand_Identity_Guidelines_v2.pdf',
-        size: 3420000,
-        type: 'application/pdf',
-        clientName: 'Acme Studio',
-        notes: 'Final vector brand bible with CMYK and Pantone palettes for print production.',
-      },
-      {
-        name: 'Hero_Visual_Keyframe.png',
-        size: 1850000,
-        type: 'image/png',
-        clientName: 'Vogue Q4',
-        notes: 'Retouched photography hero deliverable at 300 DPI.',
-      },
-      {
-        name: 'Mobile_App_Design_Tokens.fig',
-        size: 4900000,
-        type: 'application/octet-stream',
-        clientName: 'Fintech Portal',
-        notes: 'Figma export package containing design token specs and layout components.',
-      },
-      {
-        name: 'Campaign_Press_Assets.zip',
-        size: 8200000,
-        type: 'application/zip',
-        clientName: 'Acme Studio',
-        notes: 'Packaged press kit, logos, and high-res lifestyle imagery.',
-      },
-    ];
-
-    for (const sample of sampleItems) {
-      await handleUploadFile(sample);
-    }
-  };
-
   if (authLoading) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[#faf7f2]">
+      <div className="flex min-h-screen w-full items-center justify-center tactical-grid-bg">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-[#a35c34]" />
-          <p className="font-serif text-sm font-semibold text-[#2b2118]">
+          <Loader2 className="h-8 w-8 animate-spin text-[#00E5FF]" />
+          <p className="font-display text-sm font-semibold text-slate-200">
             Loading AssetSilo...
           </p>
         </div>
@@ -241,165 +309,248 @@ const MainPortal: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen w-full bg-[#fbf9f5] font-sans text-[#2b2118]">
-      {/* Espresso Brown Sidebar */}
+    <div className="flex min-h-screen w-full tactical-grid-bg text-slate-100">
       <Sidebar
-        totalFiles={files.length}
-        totalBytes={totalBytes}
-        currentFilter={selectedClient !== 'all' ? 'clients' : 'all'}
-        onFilterChange={(filter) => {
-          if (filter === 'all') {
-            setSelectedClient('all');
-            setSelectedCategory('all');
-          } else if (filter === 'recent') {
-            setSortField('date');
-            setSortOrder('desc');
-          }
-        }}
-        onOpenUpload={() => {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-        onOpenShareModal={() => {
-          setShareFile(null);
-          setIsShareModalOpen(true);
-        }}
+        configs={configs}
+        loadingConfigs={loadingConfigs}
+        activeConfigId={activeConfigId}
+        vaultPlatformFilter={vaultPlatformFilter}
+        onVaultPlatformFilterChange={setVaultPlatformFilter}
+        gameFilter={gameFilter}
+        onGameFilterChange={setGameFilter}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        onNewLoadout={handleNewLoadout}
+        onSelectConfig={handleSelectConfig}
+        onDeleteConfig={(cfg) => setConfigToDelete(cfg)}
         isOpenMobile={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
 
-      {/* Main Content Area - Soft Cream & Light Warm Taupe */}
-      <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8 md:px-10 max-w-7xl mx-auto">
-        <div className="space-y-6">
-          {/* Header & Controls */}
-          <DashboardHeader
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            selectedCategory={selectedCategory}
-            onCategoryChange={setSelectedCategory}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            selectedClient={selectedClient}
-            onClientChange={setSelectedClient}
-            clientsList={clientsList}
-            sortField={sortField}
-            sortOrder={sortOrder}
-            onSortChange={(field, order) => {
-              setSortField(field);
-              setSortOrder(order);
-            }}
-            onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-          />
+      <main className="flex-1 overflow-y-auto px-4 pt-5 pb-24 sm:px-8 sm:py-8 md:px-10 md:pb-10">
+        <div className="mx-auto max-w-6xl space-y-6">
+          {/* Compact Mobile Header when not on Loadouts tab */}
+          {mobileTab !== 'loadouts' && (
+            <div className="flex items-center justify-between gap-3 md:hidden">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(true)}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#222A3A] bg-[#131822] text-white cursor-pointer"
+                  aria-label="Open menu"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+                <div className="min-w-0">
+                  <div className="font-display text-lg font-extrabold text-white truncate">
+                    AssetSilo
+                  </div>
+                  <div className="text-[11px] text-slate-400 truncate">
+                    {name} · {game}
+                  </div>
+                </div>
+              </div>
 
-          {/* Stats Bar */}
-          <StatsBar files={files} totalBytes={totalBytes} />
-
-          {/* Quick Upload Zone */}
-          <UploadZone
-            onUpload={handleUploadFile}
-            clientsList={clientsList}
-          />
-
-          {/* Files List / Grid Header */}
-          <div className="flex items-center justify-between pt-2">
-            <div>
-              <h2 className="text-base font-serif font-bold text-[#2b2118]">
-                Vault Assets ({filteredFiles.length})
-              </h2>
-              <p className="text-xs text-[#7a6e65]">
-                {selectedClient !== 'all'
-                  ? `Showing deliverables for workspace "${selectedClient}"`
-                  : 'All client deliverables & creative assets'}
-              </p>
-            </div>
-
-            {files.length === 0 && (
               <button
-                onClick={handleSeedSamples}
-                className="flex items-center gap-1.5 rounded-xl border border-[#dfd6cb] bg-white px-3 py-1.5 text-xs font-semibold text-[#8d4e28] shadow-2xs hover:bg-[#faf7f2] transition-colors cursor-pointer"
+                type="button"
+                disabled={isSaving}
+                onClick={() => handleSavePreset(false)}
+                className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg bg-[#FF4655] px-3.5 py-2 text-xs font-bold text-white cursor-pointer disabled:opacity-60"
               >
-                <Sparkles className="h-3.5 w-3.5 text-[#d1945f]" />
-                <span>Load Sample Client Assets</span>
+                {saveSuccess ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+                <span>{saveSuccess ? 'Saved' : 'Save'}</span>
               </button>
-            )}
+            </div>
+          )}
+
+          {/* Loadout Studio Editor (always visible on desktop, active on 'loadouts' tab on mobile) */}
+          <div className={mobileTab === 'loadouts' ? 'block' : 'hidden md:block'}>
+            <PresetMetadataBar
+              activeConfigId={activeConfigId}
+              platform={platform}
+              onPlatformChange={handlePlatformChange}
+              name={name}
+              onNameChange={setName}
+              game={game}
+              onGameChange={(g) =>
+                platform === 'Mobile' ? handleMobileGameChange(g) : setGame(g)
+              }
+              tags={tags}
+              onTagsChange={setTags}
+              resolution={resolution}
+              onResolutionChange={setResolution}
+              dpi={dpi}
+              sensitivity={sensitivity}
+              cameraSens={cameraSens}
+              onCameraSensChange={setCameraSens}
+              adsSens={adsSens}
+              onAdsSensChange={setAdsSens}
+              gyroSens={gyroSens}
+              onGyroSensChange={setGyroSens}
+              fingerSetup={fingerSetup}
+              onFingerSetupChange={setFingerSetup}
+              hudCode={hudCode}
+              onHudCodeChange={setHudCode}
+              notes={notes}
+              onNotesChange={setNotes}
+              isSaving={isSaving}
+              saveSuccess={saveSuccess}
+              onSavePreset={handleSavePreset}
+              onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+            />
           </div>
 
-          {/* Files Content */}
-          {loadingFiles ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="flex flex-col items-center gap-2">
-                <Loader2 className="h-6 w-6 animate-spin text-[#a35c34]" />
-                <p className="text-xs text-[#7a6e65]">Syncing client vault...</p>
-              </div>
-            </div>
-          ) : filteredFiles.length === 0 ? (
-            <EmptyState
-              isSearching={!!searchQuery || selectedCategory !== 'all' || selectedClient !== 'all'}
-              onClearSearch={() => {
-                setSearchQuery('');
-                setSelectedCategory('all');
-                setSelectedClient('all');
+          {/* 1. Interactive Sens Lab */}
+          <div className={mobileTab === 'sens' ? 'block' : 'hidden md:block'}>
+            <SensitivityLab
+              platform={platform}
+              dpi={dpi}
+              sensitivity={sensitivity}
+              game={game}
+              onApplyPcCalibration={(nextDpi, nextSens, nextGame) => {
+                setPlatform('PC');
+                setDpi(nextDpi);
+                setSensitivity(nextSens);
+                setGame(nextGame);
               }}
-              onUploadClick={() => {
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-            />
-          ) : viewMode === 'list' ? (
-            <FileList
-              files={filteredFiles}
-              onDownload={handleDownload}
-              onPreview={(file) => setPreviewFile(file)}
-              onDelete={(file) => setFileToDelete(file)}
-              onShare={(file) => {
-                setShareFile(file);
-                setIsShareModalOpen(true);
+              cameraSens={cameraSens}
+              adsSens={adsSens}
+              gyroSens={gyroSens}
+              onApplyMobileCalibration={(nextCam, nextAds, nextGyro, nextGame) => {
+                setPlatform('Mobile');
+                setCameraSens(nextCam);
+                setAdsSens(nextAds);
+                setGyroSens(nextGyro);
+                setGame(nextGame);
               }}
             />
-          ) : (
-            <FileGrid
-              files={filteredFiles}
-              onDownload={handleDownload}
-              onPreview={(file) => setPreviewFile(file)}
-              onDelete={(file) => setFileToDelete(file)}
-              onShare={(file) => {
-                setShareFile(file);
-                setIsShareModalOpen(true);
-              }}
+          </div>
+
+          {/* 2. Touch-Friendly Crosshair Studio */}
+          <div className={mobileTab === 'crosshair' ? 'block' : 'hidden md:block'}>
+            <CrosshairStudio settings={crosshair} onChange={setCrosshair} />
+          </div>
+
+          {/* 3. Aim & Reflex Warmup (3 Modes) */}
+          <div className={mobileTab === 'warmup' ? 'block' : 'hidden md:block'}>
+            <AimTestBox
+              platform={platform}
+              dpi={dpi}
+              sensitivity={sensitivity}
+              cameraSens={cameraSens}
+              game={game}
+              crosshair={crosshair}
             />
-          )}
+          </div>
+
+          {/* 4. PC & Mobile Loadout Vault */}
+          <div className={mobileTab === 'loadouts' ? 'block' : 'hidden md:block'}>
+            <SavedLoadoutsGrid
+              configs={configs}
+              activeConfigId={activeConfigId}
+              vaultPlatformFilter={vaultPlatformFilter}
+              onVaultPlatformFilterChange={setVaultPlatformFilter}
+              gameFilter={gameFilter}
+              onGameFilterChange={setGameFilter}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              onSelectConfig={handleSelectConfig}
+              onDeleteConfig={(cfg) => setConfigToDelete(cfg)}
+            />
+          </div>
         </div>
       </main>
 
-      {/* Preview Modal */}
-      <FilePreviewModal
-        file={previewFile}
-        isOpen={!!previewFile}
-        onClose={() => setPreviewFile(null)}
-        onDownload={handleDownload}
-        onShare={(file) => {
-          setShareFile(file);
-          setIsShareModalOpen(true);
-        }}
-      />
+      {/* Fixed Bottom Navigation Bar for Mobile (< 768px) */}
+      <nav
+        aria-label="Mobile Navigation"
+        className="fixed bottom-0 left-0 right-0 z-40 grid h-16 grid-cols-4 border-t border-[#222A3A] bg-[#0F131C]/95 backdrop-blur-md md:hidden"
+      >
+        {(
+          [
+            { id: 'loadouts', label: 'Loadouts', icon: Layers },
+            { id: 'sens', label: 'Sens Lab', icon: ArrowRightLeft },
+            { id: 'crosshair', label: 'Crosshair', icon: Crosshair },
+            { id: 'warmup', label: 'Warmup', icon: Target },
+          ] as const
+        ).map((tab) => {
+          const Icon = tab.icon;
+          const active = mobileTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                setMobileTab(tab.id);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className={`flex flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                active ? 'text-[#00E5FF]' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Icon className={`h-5 w-5 ${active ? 'text-[#00E5FF]' : 'text-slate-400'}`} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
-      {/* Delete Confirmation Modal */}
-      <DeleteConfirmModal
-        file={fileToDelete}
-        isOpen={!!fileToDelete}
-        onClose={() => setFileToDelete(null)}
-        onConfirm={handleDeleteConfirm}
-        isDeleting={isDeleting}
-      />
+      {/* Delete Loadout Confirmation Modal */}
+      {configToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="relative w-full max-w-md rounded-xl border border-[#222A3A] bg-[#131822] p-6 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => setConfigToDelete(null)}
+              disabled={isDeleting}
+              className="absolute top-4 right-4 rounded-lg p-1 text-slate-400 hover:bg-[#1A2130] hover:text-white cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
 
-      {/* Share Client Link Modal */}
-      <SharePortalModal
-        file={shareFile}
-        clientName={selectedClient !== 'all' ? selectedClient : undefined}
-        isOpen={isShareModalOpen}
-        onClose={() => {
-          setIsShareModalOpen(false);
-          setShareFile(null);
-        }}
-      />
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#FF4655]/15 text-[#FF4655] border border-[#FF4655]/30">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-display text-base font-bold text-white">
+                  Delete saved loadout?
+                </h3>
+                <p className="text-xs text-slate-400">This cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#222A3A] bg-[#0B0E14] p-3.5 mb-5 text-xs">
+              <p className="font-semibold text-white truncate">{configToDelete.name}</p>
+              <p className="text-slate-400 mt-0.5 font-mono">
+                {getConfigPlatform(configToDelete) === 'Mobile'
+                  ? `${configToDelete.game} · ${configToDelete.cameraSens ?? 85}% Cam · ${configToDelete.fingerSetup || '4-Finger Claw'}`
+                  : `${configToDelete.game} · ${configToDelete.dpi ?? 800} DPI · ${configToDelete.sensitivity ?? 0.35} sens`}
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfigToDelete(null)}
+                disabled={isDeleting}
+                className="min-h-[42px] rounded-lg border border-[#222A3A] px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-[#1A2130] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+                className="flex min-h-[42px] items-center gap-1.5 rounded-lg bg-[#FF4655] px-4 py-2 text-xs font-bold text-white hover:bg-[#e53947] cursor-pointer disabled:opacity-60"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>{isDeleting ? 'Deleting...' : 'Delete Loadout'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -407,7 +558,7 @@ const MainPortal: React.FC = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <MainPortal />
+      <GamingHub />
     </AuthProvider>
   );
 }

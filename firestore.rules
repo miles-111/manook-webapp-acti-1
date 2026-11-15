@@ -23,6 +23,14 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isValidGame(game) {
+      return game in ['Valorant', 'CS2', 'Apex Legends', 'Overwatch 2', 'CODM', 'PUBGM', 'ROS', 'BloodStrike'];
+    }
+
+    function isValidFingerSetup(setup) {
+      return setup in ['2-Thumb', '3-Finger Claw', '4-Finger Claw', '5-Finger Claw', '6-Finger Claw'];
+    }
+
     // Validation for UserProfile
     function isValidUserProfile(data) {
       return data.keys().hasAll(['userId', 'email', 'role', 'createdAt'])
@@ -34,17 +42,38 @@ service cloud.firestore {
         && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 120));
     }
 
-    // Validation for AssetFile (Metadata only, without Firebase Storage blobs)
-    function isValidAssetFile(data) {
-      return data.keys().hasAll(['userId', 'name', 'size', 'type', 'uploadedAt'])
-        && data.keys().hasOnly(['userId', 'name', 'size', 'type', 'uploadedAt', 'clientName', 'notes'])
-        && data.userId is string && data.userId == request.auth.uid && data.userId.size() <= 128
-        && data.name is string && data.name.size() > 0 && data.name.size() <= 255
-        && data.size is number && data.size >= 0
-        && data.type is string && data.type.size() <= 120
-        && data.uploadedAt is string && data.uploadedAt.size() <= 64
-        && (!('clientName' in data) || (data.clientName is string && data.clientName.size() <= 120))
-        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000));
+    // Validation for PC & Mobile AimConfig
+    function isValidAimConfig(data, ownerUid) {
+      let hasPcFields = data.keys().hasAll(['dpi', 'sensitivity', 'edpi', 'crosshairCode', 'resolution']);
+      let hasMobileFields = data.keys().hasAll(['cameraSens', 'adsSens', 'gyroSens', 'fingerSetup', 'hudCode']);
+
+      return data.keys().hasAll(['userId', 'name', 'game', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'userId', 'name', 'game', 'platform', 'tags',
+          'dpi', 'sensitivity', 'edpi', 'cm360', 'crosshairCode', 'resolution',
+          'cameraSens', 'adsSens', 'gyroSens', 'fingerSetup', 'hudCode',
+          'notes', 'createdAt', 'updatedAt'
+        ])
+        && (hasPcFields || hasMobileFields)
+        && data.userId is string && data.userId == request.auth.uid && data.userId == ownerUid && data.userId.size() <= 128
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.game is string && data.game.size() <= 40 && isValidGame(data.game)
+        && (!('platform' in data) || (data.platform in ['PC', 'Mobile']))
+        && (!('tags' in data) || (data.tags is string && data.tags.size() <= 160))
+        && (!('dpi' in data) || (data.dpi is number && data.dpi >= 50 && data.dpi <= 32000))
+        && (!('sensitivity' in data) || (data.sensitivity is number && data.sensitivity > 0 && data.sensitivity <= 100))
+        && (!('edpi' in data) || (data.edpi is number && data.edpi > 0 && data.edpi <= 3200000))
+        && (!('cm360' in data) || (data.cm360 is number && data.cm360 > 0 && data.cm360 <= 10000))
+        && (!('crosshairCode' in data) || (data.crosshairCode is string && data.crosshairCode.size() <= 255))
+        && (!('resolution' in data) || (data.resolution is string && data.resolution.size() <= 40))
+        && (!('cameraSens' in data) || (data.cameraSens is number && data.cameraSens >= 1 && data.cameraSens <= 400))
+        && (!('adsSens' in data) || (data.adsSens is number && data.adsSens >= 1 && data.adsSens <= 400))
+        && (!('gyroSens' in data) || (data.gyroSens is number && data.gyroSens >= 0 && data.gyroSens <= 500))
+        && (!('fingerSetup' in data) || (data.fingerSetup is string && data.fingerSetup.size() <= 40 && isValidFingerSetup(data.fingerSetup)))
+        && (!('hudCode' in data) || (data.hudCode is string && data.hudCode.size() <= 255))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.createdAt is string && data.createdAt.size() <= 64
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
     }
 
     // Test connection document for connection healthcheck
@@ -52,7 +81,7 @@ service cloud.firestore {
       allow read: if true;
     }
 
-    // User Profile Documents
+    // User Profile Documents & Saved Aim Configs Subcollection
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
       allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidUserProfile(incoming());
@@ -62,18 +91,23 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role']);
       allow delete: if false;
-    }
 
-    // Asset Files Collection (Metadata stored in Firestore)
-    match /files/{fileId} {
-      allow get: if isSignedIn() && isValidId(fileId) && resource.data.userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn() && isValidId(fileId) && isValidAssetFile(incoming());
-      allow update: if isSignedIn() && isValidId(fileId)
-        && isValidAssetFile(incoming())
-        && incoming().userId == existing().userId
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'clientName', 'notes']);
-      allow delete: if isSignedIn() && isValidId(fileId) && resource.data.userId == request.auth.uid;
+      match /configs/{configId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(configId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && resource.data.userId == request.auth.uid;
+        allow create: if isSignedIn() && isValidId(userId) && isValidId(configId) && request.auth.uid == userId && isValidAimConfig(incoming(), userId);
+        allow update: if isSignedIn() && isValidId(userId) && isValidId(configId) && request.auth.uid == userId
+          && isValidAimConfig(incoming(), userId)
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'game', 'platform', 'tags',
+            'dpi', 'sensitivity', 'edpi', 'cm360', 'crosshairCode', 'resolution',
+            'cameraSens', 'adsSens', 'gyroSens', 'fingerSetup', 'hudCode',
+            'notes', 'updatedAt'
+          ]);
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(configId) && request.auth.uid == userId;
+      }
     }
   }
 }
